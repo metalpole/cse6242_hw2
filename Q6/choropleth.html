@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+.counties {
+  fill: none;
+  stroke: rgb(0, 0, 0);
+  stroke-linejoin: round;
+}
+
+.states {
+  fill: none;
+  stroke-linejoin: round;
+}
+
+.d3-tip {
+  line-height: 1;
+  font-weight: bold;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  border-radius: 2px;
+}
+
+/* Creates a small triangle extender for the tooltip */
+.d3-tip:after {
+  box-sizing: border-box;
+  display: inline;
+  font-size: 10px;
+  width: 3%;
+  line-height: 6;
+  color: rgba(0, 0, 0, 0.8);
+  content: "\25BC";
+  position: absolute;
+  text-align: center;
+}
+
+</style>
+<body>  
+</body>
+<script src="../lib/d3.v5.min.js"></script>
+<script src="../lib/d3-scale-chromatic.v1.min.js"></script>
+<script src="../lib/topojson.v2.min.js"></script>
+<script src="../lib/d3-simple-slider.min.js"></script>
+<script src="../lib/d3-tip.min.js"></script>
+<script>
+
+// Margin convention
+var margin = {top: 20, right: 50, bottom: 50, left: 50}
+  , width = window.innerWidth - margin.left - margin.right // Use the window's width
+  , height = window.innerHeight - margin.top - margin.bottom; // Use the window's height
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom - 80)
+    .append("g")
+    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+var path = d3.geoPath().projection(
+            d3.geoAlbersUsa()
+                .translate([width/2, height/2])
+                .scale([1000]));
+
+var color2 = d3.scaleThreshold()
+                .range(d3.schemePurples[9]);
+              
+var x = d3.range(9);
+// Legend
+var g = svg.append("g")
+        .attr("class", "key")
+        .attr("transform", "translate(0,40)");
+g.append("text")
+    .attr("class", "caption")
+    .attr("x", width*0.85 - 56)
+    .attr("y", 0)
+    .attr("fill", "#000")
+    .attr("text-anchor", "start")
+    .attr("font-weight", "bold")
+    .text("Earthquake Frequency");
+
+var promises = [d3.json("states-10m.json"), d3.csv("state-earthquakes.csv")];
+var geojson;
+var counts;
+var topo;
+var year = 2010;
+
+Promise.all(promises).then(ready);
+
+// Step
+var sliderStep = d3
+  .sliderBottom()
+  .min(2010)
+  .max(2015)
+  .width(400)
+  .tickFormat(d3.format('.0f'))
+  .ticks(6)
+  .step(1)
+  .default(2010)
+  .on('onchange', val => {
+    // Do something with val
+    year = val;
+    Promise.all(promises).then(ready2);
+  });
+
+var gStep = d3
+  .select('body')
+  .append('svg')
+  .attr('width', width)
+  .attr('height', 50)
+  .append('g')
+  .attr('transform', 'translate(' + (width/3) + ',10)');
+
+gStep.call(sliderStep);
+gStep.append('text').text('Year').attr("font-weight", "bold").attr('transform', 'translate(-70,10)');
+
+svg.append("text")
+    .text("jtan318")
+    .attr('transform', 'translate(' + (width*0.8) + ',' + (height-margin.bottom) + ')');
+
+function makeArr(startValue, stopValue, cardinality) {
+  var arr = [];
+  var step = (stopValue - startValue) / (cardinality + 1);
+  for (var i = 1; i <= cardinality; i++) {
+    arr.push(startValue + (step * i));
+  }
+  return arr;
+}
+
+function ready(array) {
+    geojson = topojson.feature(array[0], array[0].objects.states);
+    topo = array[0];
+    counts = array[1];
+    for (var b = 0; b < counts.length; b++) {
+      counts[b] = {
+        2010: Math.log(parseFloat(counts[b][2010])+0.1),
+        2011: Math.log(parseFloat(counts[b][2011])+0.1),
+        2012: Math.log(parseFloat(counts[b][2012])+0.1),
+        2013: Math.log(parseFloat(counts[b][2013])+0.1),
+        2014: Math.log(parseFloat(counts[b][2014])+0.1),
+        2015: Math.log(parseFloat(counts[b][2015])+0.1),
+        Region: counts[b].Region,
+        States: counts[b].States
+      }
+    };
+
+    color2.domain(makeArr(d3.min(counts, function(d) { return d[year]; }),
+                          d3.max(counts, function(d) { return d[year]; }),
+                          8));
+    // console.log(color2.domain());
+    // console.log(color2.range());
+    console.log(array[1]);
+
+    //Merge the earthquake data and GeoJSON
+    //Loop through once for each state data value
+    for (var i = 0; i < counts.length; i++) {
+      // Grab state name
+      var dataState = counts[i].States;
+      var dataRegion = counts[i].Region;
+      //Grab data value, and convert from string to float
+      var dataValue = counts[i][year];
+      //Find the corresponding state inside the GeoJSON
+      for (var j = 0; j < geojson.features.length; j++) {
+        var jsonState = geojson.features[j].properties.name;
+        if (dataState == jsonState) {
+          //Copy the data value into the JSON
+          geojson.features[j].properties.value = dataValue;
+          geojson.features[j].properties.region = dataRegion;
+          break;
+        }
+      }
+    }
+
+    var tip = d3.tip()
+                .attr('class', 'd3-tip')
+                .offset([-10, 0])
+                .html(function(d) {
+                  return "State: " + d.properties.name + "<br> Region: " + d.properties.region + "<br> Year: " + 
+                  year + "<br> Earthquakes: " + Math.round(Math.exp(d.properties.value)-0.1);
+                });
+    svg.call(tip);  
+    
+    svg.append("g")
+        .attr("class", "counties")
+        .selectAll("path")
+        .data(geojson.features)
+        .enter().append("path")
+        .attr("fill", function(d) {
+          return color2(d.properties.value); 
+          })
+        .attr("d", path)
+        .on('mouseover', tip.show)
+        .on('mouseout', tip.hide);
+
+    svg.append("path")
+      .datum(topojson.mesh(array[0], array[0].objects.states, function(a, b) { return a !== b; }))
+      .attr("class", "states")
+      .attr("d", path);
+
+    // Legend
+    g.selectAll("rect")
+      .data(x)
+      .enter().append("rect")
+        .attr("x", width*0.85)
+        .attr("y", function(d) {return 10 + d*23;})
+        .attr("width", 20)
+        .attr("height", 20)
+        .attr("fill", function(d) { return color2.range()[d];});
+      
+    var labels = color2.domain();
+    labels.push(d3.max(counts, function(d) { return d[year]; }));
+    // console.log(labels);
+
+    g.selectAll("text")
+      .data(labels)
+      .enter().append("text")
+        .attr("x", width*0.85 + 25)
+        .attr("y", function(d, i) {return 25 + i*23;})
+        .text(function(d) {return Math.round(Math.exp(d)-0.1);})
+        .attr("class", "temp");
+};
+
+function ready2(array) {
+  color2.domain(makeArr(d3.min(counts, function(d) { return d[year]; }),
+                          d3.max(counts, function(d) { return d[year]; }),
+                          8));
+  console.log(color2.domain());
+
+  //Merge the earthquake data and GeoJSON
+  //Loop through once for each state data value
+  for (var i = 0; i < counts.length; i++) {
+    // Grab state name
+    var dataState = counts[i].States;
+    var dataRegion = counts[i].Region;
+    //Grab data value, and convert from string to float
+    var dataValue = counts[i][year];
+    //Find the corresponding state inside the GeoJSON
+    for (var j = 0; j < geojson.features.length; j++) {
+      var jsonState = geojson.features[j].properties.name;
+      if (dataState == jsonState) {
+        //Copy the data value into the JSON
+        geojson.features[j].properties.value = dataValue;
+        geojson.features[j].properties.region = dataRegion;
+        break;
+      }
+    }
+  }
+
+  var tip = d3.tip()
+                .attr('class', 'd3-tip')
+                .offset([-10, 0])
+                .html(function(d) {
+                  return "State: " + d.properties.name + "<br> Region: " + d.properties.region + "<br> Year: " + 
+                  year + "<br> Earthquakes: " + Math.round(Math.exp(d.properties.value)-0.1);
+                });
+  svg.call(tip); 
+  
+  svg.append("g")
+      .attr("class", "counties")
+      .selectAll("path")
+      .data(geojson.features)
+      .enter().append("path")
+      .attr("fill", function(d) {
+        return color2(d.properties.value); 
+        })
+      .attr("d", path)
+      .on('mouseover', tip.show)
+      .on('mouseout', tip.hide);
+
+  svg.append("path")
+      .datum(topojson.mesh(array[0], array[0].objects.states, function(a, b) { return a !== b; }))
+      .attr("class", "states")
+      .attr("d", path);
+  
+  g.selectAll(".temp")
+      .remove();
+
+  // Legend
+  g.selectAll("rect")
+    .data(x)
+    .enter().append("rect")
+      .attr("x", width*0.85)
+      .attr("y", function(d) {return 10 + d*23;})
+      .attr("width", 20)
+      .attr("height", 20)
+      .attr("fill", function(d) { return color2.range()[d];});
+
+    var labels = color2.domain();
+    labels.push(d3.max(counts, function(d) { return d[year]; }));
+    console.log(labels);
+
+  g.selectAll("text")
+      .data(labels)
+      .enter().append("text")
+        .attr("x", width*0.85 + 25)
+        .attr("y", function(d, i) {return 25 + i*23;})
+        .text(function(d) {return Math.round(Math.exp(d)-0.1);})
+        .attr("class", "temp");
+}
+
+</script>

@@ -1,0 +1,1 @@
+Nonlinear scales are used in charts if the data covers an extreme range of values. Instead of focusing on the exact values, the focus is on the magnitude of the datapoints' exponent in scientific notation (log scale). Nonlinear scales can also help convert nonlinear relationships to linear ones.
